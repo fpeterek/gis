@@ -38,13 +38,13 @@ struct MouseProbe {
 // variables
 
 // function declarations
-void flood_fill(cv::Mat& src_img, cv::Mat& dst_img, int x, int y);
+void flood_fill(const cv::Mat& src_img, cv::Mat& dst_img, int x, int y);
 
 
 /**
  * Mouse clicking callback.
  */
-void mouse_probe_handler(int event, int x, int y, int flags, void* param) {
+void mouse_probe_handler(int event, int x, int y, [[maybe_unused]] int flags, void* param) {
     MouseProbe *probe = (MouseProbe*)param;
 
     switch (event) {
@@ -71,44 +71,40 @@ void create_windows(const int width, const int height) {
 } // create_windows
 
 
-/**
- * Perform flood fill from the specified point (x, y) for the neighborhood points if they contain the same value,
- * as the one that came in argument 'value'. Function recursicely call itself for its 4-neighborhood.
- * 
- * edgemap_8uc1_img - image, in which we perform flood filling
- * heightmap_show_8uc3_img - image, in which we display the filling
- * value - value, for which we'll perform flood filling
- */
 void fill_step(
-        cv::Mat& edgemap_8uc1_img,
-        cv::Mat& heightmap_show_8uc3_img,
+        cv::Mat& edgemap,
+        cv::Mat& heightmap,
         const int x,
-        const int y,
-        const uchar value
+        const int y
     ) {
-    int width, height;
 
-} //fill_step
+    if (not edgemap.at<uchar>(y ,x)) {
+        return;
+    }
+    edgemap.at<uchar>(y, x) = 0;
+    // TODO
+    /* heightmap.at<> */
 
+    fill_step(edgemap, heightmap, x-1, y);
+    fill_step(edgemap, heightmap, x+1, y);
+    fill_step(edgemap, heightmap, x, y-1);
+    fill_step(edgemap, heightmap, x, y+1);
 
-/**
- * Perform flood fill from the specified point (x, y). The function remembers the value at the coordinate (x, y)
- * and fill the neighborhood using 'fill_step' function so long as the value in the neighborhood points are the same.
- * Execute the fill on a temporary image to prevent the original image from being repainted.
+}
 
- * edgemap_8uc1_img - image, in which we perform flood filling
- * heightmap_show_8uc3_img - image, in which we display the filling
- */
 void flood_fill(
-        cv::Mat& edgemap_8uc1_img,
+        const cv::Mat& edgemap_8uc1_img,
         cv::Mat& heightmap_show_8uc3_img,
         const int x,
         const int y
     ) {
-    cv::Mat tmp_edgemap_8uc1_img;
+    cv::Mat tmp_edge { edgemap_8uc1_img };
+    cv::Mat dest { heightmap_show_8uc3_img };
 
-} //flood_fill
+    fill_step(tmp_edge, dest, x, y);
 
+    heightmap_show_8uc3_img = dest;
+}
 
 /**
  * Find the minimum and maximum coordinates in the file.
@@ -303,7 +299,7 @@ cv::Mat dilate_and_erode_edgemap(const cv::Mat& img) {
 
 
 void process_lidar(
-        const char* txt_filename,
+        [[maybe_unused]] const char* txt_filename,
         const char* bin_filename,
         const char* img_filename
     ) {
@@ -360,15 +356,14 @@ void process_lidar(
     binarize_image(edgemap_8uc1_img);
     
     // implement image dilatation and erosion
-    const auto edgemap = dilate_and_erode_edgemap(edgemap_8uc1_img);
+    edgemap_8uc1_img = dilate_and_erode_edgemap(edgemap_8uc1_img);
 
     cv::imwrite(img_filename, heightmap_8uc1_img);
 
     // wait here for user input using (mouse clicking)
     while (1) {
         cv::imshow(STEP1_WIN_NAME, heightmap_show_8uc3_img);
-        /* cv::imshow(STEP2_WIN_NAME, edgemap_8uc1_img); */
-        cv::imshow(STEP2_WIN_NAME, edgemap);
+        cv::imshow(STEP2_WIN_NAME, edgemap_8uc1_img);
         int key = cv::waitKey(10);
         if (key == 'q') {
             break;
