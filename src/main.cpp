@@ -241,13 +241,64 @@ void make_edges(const cv::Mat& src_8uc1_img, cv::Mat& edgemap_8uc1_img) {
  * Transforms the image so it contains only two values.
  * Threshold may be set experimentally.
  */
-void binarize_image(cv::Mat& src_8uc1_img) {
-    int x, y;
-    uchar value;
+void binarize_image(cv::Mat& img) {
+    for (int y = 0; y < img.rows; ++y) {
+        for (int x = 0; x < img.cols; ++x) {
+            const auto val = img.at<uchar>(y, x);
+            img.at<uchar>(y, x) = 255 * (val > 127);
+        }
+    }
 }
 
+void fill_all(cv::Mat& img, const int x, const int y) {
+    for (int dy = -1; dy < 2; ++dy) {
+        for (int dx = -1; dx < 2; ++dx) {
+            img.at<uchar>(y+dy, x+dx) = 255;
+        }
+    }
+}
 
-void dilate_and_erode_edgemap(cv::Mat& edgemap_8uc1_img) {
+cv::Mat dilate(const cv::Mat& img) {
+    cv::Mat dest = cv::Mat::zeros(img.rows, img.cols, CV_8UC1);
+
+    for (int y = 1; y < img.rows-1; ++y) {
+        for (int x = 1; x < img.cols-1; ++x) {
+            const auto val = img.at<uchar>(y, x);
+
+            if (val) {
+                fill_all(dest, x, y);
+            }
+        }
+    }
+
+    return dest;
+}
+
+void erode_px(const cv::Mat& orig, cv::Mat& dest, const int x, const int y) {
+    for (int dy = -1; dy < 2; ++dy) {
+        for (int dx = -1; dx < 2; ++dx) {
+            if (not orig.at<uchar>(y+dy, x+dx)) {
+                return;
+            }
+        }
+    }
+    dest.at<uchar>(y, x) = 255;
+}
+
+cv::Mat erode(const cv::Mat& img) {
+    cv::Mat dest = cv::Mat::zeros(img.rows, img.cols, CV_8UC1);
+
+    for (int y = 1; y < img.rows-1; ++y) {
+        for (int x = 1; x < img.cols-1; ++x) {
+            erode_px(img, dest, x, y);
+        }
+    }
+
+    return dest;
+}
+
+cv::Mat dilate_and_erode_edgemap(const cv::Mat& img) {
+    return erode(dilate(img));
 }
 
 
@@ -288,7 +339,7 @@ void process_lidar(
 
     edgemap_8uc1_img = cv::Mat(
             cv::Size { cvRound(delta_x + 0.5f), cvRound(delta_y + 0.5f) },
-            CV_8UC3);
+            CV_8UC1);
 
     create_windows(heightmap_8uc1_img.cols, heightmap_8uc1_img.rows);
     mouse_probe = new MouseProbe(heightmap_8uc1_img, heightmap_show_8uc3_img, edgemap_8uc1_img);
@@ -303,20 +354,21 @@ void process_lidar(
     cv::cvtColor(heightmap_8uc1_img, heightmap_show_8uc3_img, cv::COLOR_GRAY2RGB);
 
     // create edge map from the height image
-    //make_edges(heightmap_8uc1_img, edgemap_8uc1_img);
+    make_edges(heightmap_8uc1_img, edgemap_8uc1_img);
 
     // binarize image, so we can easily process it in the next step
-    //binarize_image(edgemap_8uc1_img);
+    binarize_image(edgemap_8uc1_img);
     
     // implement image dilatation and erosion
-    //dilate_and_erode_edgemap(edgemap_8uc1_img);
+    const auto edgemap = dilate_and_erode_edgemap(edgemap_8uc1_img);
 
     cv::imwrite(img_filename, heightmap_8uc1_img);
 
     // wait here for user input using (mouse clicking)
     while (1) {
         cv::imshow(STEP1_WIN_NAME, heightmap_show_8uc3_img);
-        //cv::imshow(STEP2_WIN_NAME, edgemap_8uc1_img);
+        /* cv::imshow(STEP2_WIN_NAME, edgemap_8uc1_img); */
+        cv::imshow(STEP2_WIN_NAME, edgemap);
         int key = cv::waitKey(10);
         if (key == 'q') {
             break;
