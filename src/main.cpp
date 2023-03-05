@@ -75,21 +75,24 @@ void fill_step(
         cv::Mat& edgemap,
         cv::Mat& heightmap,
         const int x,
-        const int y
+        const int y,
+        const int desired_value
     ) {
 
-    if (not edgemap.at<uchar>(y ,x)) {
+    if (x < 0 or x >= edgemap.cols or y < 0 or y >= edgemap.rows) {
         return;
     }
-    edgemap.at<uchar>(y, x) = 0;
-    // TODO
-    /* heightmap.at<> */
 
-    fill_step(edgemap, heightmap, x-1, y);
-    fill_step(edgemap, heightmap, x+1, y);
-    fill_step(edgemap, heightmap, x, y-1);
-    fill_step(edgemap, heightmap, x, y+1);
+    if (edgemap.at<uchar>(y, x) != desired_value) {
+        return;
+    }
+    edgemap.at<uchar>(y, x) = desired_value - 255;
+    heightmap.at<cv::Vec3b>(y, x) = { 0, 0, 255 };
 
+    fill_step(edgemap, heightmap, x-1, y, desired_value);
+    fill_step(edgemap, heightmap, x+1, y, desired_value);
+    fill_step(edgemap, heightmap, x, y-1, desired_value);
+    fill_step(edgemap, heightmap, x, y+1, desired_value);
 }
 
 void flood_fill(
@@ -99,9 +102,9 @@ void flood_fill(
         const int y
     ) {
     cv::Mat tmp_edge { edgemap_8uc1_img };
-    cv::Mat dest { heightmap_show_8uc3_img };
+    cv::Mat dest { heightmap_show_8uc3_img.clone() };
 
-    fill_step(tmp_edge, dest, x, y);
+    fill_step(tmp_edge, dest, x, y, tmp_edge.at<uchar>(y, x));
 
     heightmap_show_8uc3_img = dest;
 }
