@@ -14,9 +14,12 @@
 #include "utils.hpp"
 
 namespace {
-    const char* STEP1_WIN_NAME = "Heightmap";
-    const char* STEP2_WIN_NAME = "Edges";
-    const int ZOOM = 1;
+    const char* step1_win_name = "Heightmap";
+    const char* step2_win_name = "Edges";
+    const char* ltype0_win = "First reflection";
+    const char* ltype1_win = "Vegetation";
+    const char* ltype2_win = "Surface beneath vegetation";
+    const int zoom = 1;
 }
 
 
@@ -62,11 +65,17 @@ void mouse_probe_handler(int event, int x, int y, [[maybe_unused]] int flags, vo
 
 
 void create_windows(const int width, const int height) {
-    cv::namedWindow(STEP1_WIN_NAME, 0);
-    cv::namedWindow(STEP2_WIN_NAME, 0);
+    cv::namedWindow(step1_win_name, 0);
+    cv::namedWindow(step2_win_name, 0);
+    cv::namedWindow(ltype0_win, 0);
+    cv::namedWindow(ltype1_win, 0);
+    cv::namedWindow(ltype2_win, 0);
 
-    cv::resizeWindow(STEP1_WIN_NAME, width*ZOOM, height*ZOOM);
-    cv::resizeWindow(STEP2_WIN_NAME, width*ZOOM, height*ZOOM);
+    cv::resizeWindow(step1_win_name, width*zoom, height*zoom);
+    cv::resizeWindow(step2_win_name, width*zoom, height*zoom);
+    cv::resizeWindow(ltype0_win, width*zoom, height*zoom);
+    cv::resizeWindow(ltype1_win, width*zoom, height*zoom);
+    cv::resizeWindow(ltype2_win, width*zoom, height*zoom);
 
 } // create_windows
 
@@ -165,10 +174,7 @@ void fill_image(
     ) {
     int delta_x, delta_y, delta_z;
     float fx, fy, fz;
-    int x, y, l_type;
-    int stride;
-    int num_points = 1;
-    float range = 0.0f;
+    int l_type;
     
     struct Pixel {
         float sum = 0;
@@ -190,8 +196,6 @@ void fill_image(
     delta_x = round(max_x - min_x + 0.5f);
     delta_y = round(max_y - min_y + 0.5f);
     delta_z = round(max_z - min_z + 0.5f);
-
-    stride = delta_x;
 
     std::ifstream is { filename, std::ios::binary };
 
@@ -215,26 +219,75 @@ void fill_image(
             heightmap_8uc1_img.at<uchar>(y, x) = norm;
         }
     }
-
-    // 1:
-    // We allocate helper arrays, in which we store values from the lidar
-    // and the number of these values for each pixel
-
-    // 2:
-    // go through the file and assign values to the field
-    // beware that in S-JTSK the beginning of the co-ordinate system is at the bottom left,
-    // while in the picture it is top left
-
-    // 3:
-    // assign values from the helper field into the image
-
 }
 
+void fill_image_with_ltype(
+        const std::string& filename,
+        cv::Mat& dest,
+        const float min_x,
+        const float max_x,
+        const float min_y,
+        const float max_y,
+        const float min_z,
+        const float max_z,
+        const int ltype
+    ) {
+    int delta_x, delta_y, delta_z;
+    float fx, fy, fz;
+    int l_type;
+    
+    struct Pixel {
+        float sum = 0;
+        uint64_t count = 0;
+
+        auto avg() const {
+            return sum / count;
+        }
+    };
+
+    std::vector<std::vector<Pixel>> pixels;
+    pixels.reserve(dest.rows);
+
+    for (int i = 0; i < dest.rows; ++i) {
+        pixels.emplace_back(dest.cols, Pixel{});
+    }
+
+    // zjistime sirku a vysku obrazu
+    delta_x = round(max_x - min_x + 0.5f);
+    delta_y = round(max_y - min_y + 0.5f);
+    delta_z = round(max_z - min_z + 0.5f);
+
+    std::ifstream is { filename, std::ios::binary };
+
+    while (is) {
+        is.read((char*)&fx, 4);
+        is.read((char*)&fy, 4);
+        is.read((char*)&fz, 4);
+        is.read((char*)&l_type, 4);
+
+        if (l_type != ltype) {
+            continue;
+        }
+
+        const size_t px = (fx - min_x) / delta_x * dest.cols;
+        const size_t py = (fy - min_y) / delta_y * dest.rows;
+
+        pixels[py][px].sum += fz;
+        ++pixels[py][px].count;
+    }
+
+    for (int y = 0; y < dest.rows; ++y) {
+        for (int x = 0; x < dest.cols; ++x) {
+            const auto avg = pixels[y][x].avg();
+            const uchar norm = (avg - min_z) / delta_z * 255;
+            dest.at<uchar>(y, x) = norm;
+        }
+    }
+}
 
 void make_edges(const cv::Mat& src_8uc1_img, cv::Mat& edgemap_8uc1_img) {
     cv::Canny(src_8uc1_img, edgemap_8uc1_img, 1, 80);
 }
-
 
 /**
  * Transforms the image so it contains only two values.
@@ -343,30 +396,45 @@ void process_lidar(
     create_windows(heightmap_8uc1_img.cols, heightmap_8uc1_img.rows);
     mouse_probe = new MouseProbe(heightmap_8uc1_img, heightmap_show_8uc3_img, edgemap_8uc1_img);
 
-    cv::setMouseCallback(STEP1_WIN_NAME, mouse_probe_handler, mouse_probe);
-    cv::setMouseCallback(STEP2_WIN_NAME, mouse_probe_handler, mouse_probe);
+    cv::setMouseCallback(step1_win_name, mouse_probe_handler, mouse_probe);
+    cv::setMouseCallback(step2_win_name, mouse_probe_handler, mouse_probe);
 
     printf("Image w=%d, h=%d\n", heightmap_8uc1_img.cols, heightmap_8uc1_img.rows);
 
-    // fill the image with data from lidar scanning
     fill_image(bin_filename, heightmap_8uc1_img, min_x, max_x, min_y, max_y, min_z, max_z);
     cv::cvtColor(heightmap_8uc1_img, heightmap_show_8uc3_img, cv::COLOR_GRAY2RGB);
 
-    // create edge map from the height image
     make_edges(heightmap_8uc1_img, edgemap_8uc1_img);
 
-    // binarize image, so we can easily process it in the next step
     binarize_image(edgemap_8uc1_img);
     
-    // implement image dilatation and erosion
     edgemap_8uc1_img = dilate_and_erode_edgemap(edgemap_8uc1_img);
 
     cv::imwrite(img_filename, heightmap_8uc1_img);
 
-    // wait here for user input using (mouse clicking)
+    cv::Mat fst_reflect {
+            cv::Size { cvRound(delta_x + 0.5f), cvRound(delta_y + 0.5f) },
+            CV_8UC1 };
+    cv::Mat vegetation {
+            cv::Size { cvRound(delta_x + 0.5f), cvRound(delta_y + 0.5f) },
+            CV_8UC1 };
+    cv::Mat beneath_veg {
+            cv::Size { cvRound(delta_x + 0.5f), cvRound(delta_y + 0.5f) },
+            CV_8UC1 };
+
+    fill_image_with_ltype(
+            bin_filename, fst_reflect, min_x, max_x, min_y, max_y, min_z, max_z, 0);
+    fill_image_with_ltype(
+            bin_filename, vegetation, min_x, max_x, min_y, max_y, min_z, max_z, 1);
+    fill_image_with_ltype(
+            bin_filename, beneath_veg, min_x, max_x, min_y, max_y, min_z, max_z, 2);
+
     while (1) {
-        cv::imshow(STEP1_WIN_NAME, heightmap_show_8uc3_img);
-        cv::imshow(STEP2_WIN_NAME, edgemap_8uc1_img);
+        cv::imshow(step1_win_name, heightmap_show_8uc3_img);
+        cv::imshow(step2_win_name, edgemap_8uc1_img);
+        cv::imshow(ltype0_win, fst_reflect);
+        cv::imshow(ltype1_win, vegetation);
+        cv::imshow(ltype2_win, beneath_veg);
         int key = cv::waitKey(10);
         if (key == 'q') {
             break;
