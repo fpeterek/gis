@@ -3,7 +3,7 @@
 #include <limits>
 #include <tuple>
 #include <fstream>
-
+#include <functional>
 #include <cmath>
 
 #include <opencv2/opencv.hpp>
@@ -170,7 +170,8 @@ void fill_image(
         float min_y,
         float max_y,
         float min_z,
-        float max_z
+        float max_z,
+        const std::function<bool(int)>& ltype_pred
     ) {
     int delta_x, delta_y, delta_z;
     float fx, fy, fz;
@@ -205,8 +206,12 @@ void fill_image(
         is.read((char*)&fz, 4);
         is.read((char*)&l_type, 4);
 
+        if (not ltype_pred(l_type)) {
+            continue;
+        }
+
         const size_t px = (fx - min_x) / delta_x * heightmap_8uc1_img.cols;
-        const size_t py = (fy - min_y) / delta_y * heightmap_8uc1_img.rows;
+        const size_t py = heightmap_8uc1_img.rows - 1 - ((fy - min_y) / delta_y * heightmap_8uc1_img.rows);
 
         pixels[py][px].sum += fz;
         ++pixels[py][px].count;
@@ -217,70 +222,6 @@ void fill_image(
             const auto avg = pixels[y][x].avg();
             const uchar norm = (avg - min_z) / delta_z * 255;
             heightmap_8uc1_img.at<uchar>(y, x) = norm;
-        }
-    }
-}
-
-void fill_image_with_ltype(
-        const std::string& filename,
-        cv::Mat& dest,
-        const float min_x,
-        const float max_x,
-        const float min_y,
-        const float max_y,
-        const float min_z,
-        const float max_z,
-        const int ltype
-    ) {
-    int delta_x, delta_y, delta_z;
-    float fx, fy, fz;
-    int l_type;
-    
-    struct Pixel {
-        float sum = 0;
-        uint64_t count = 0;
-
-        auto avg() const {
-            return sum / count;
-        }
-    };
-
-    std::vector<std::vector<Pixel>> pixels;
-    pixels.reserve(dest.rows);
-
-    for (int i = 0; i < dest.rows; ++i) {
-        pixels.emplace_back(dest.cols, Pixel{});
-    }
-
-    // zjistime sirku a vysku obrazu
-    delta_x = round(max_x - min_x + 0.5f);
-    delta_y = round(max_y - min_y + 0.5f);
-    delta_z = round(max_z - min_z + 0.5f);
-
-    std::ifstream is { filename, std::ios::binary };
-
-    while (is) {
-        is.read((char*)&fx, 4);
-        is.read((char*)&fy, 4);
-        is.read((char*)&fz, 4);
-        is.read((char*)&l_type, 4);
-
-        if (l_type != ltype) {
-            continue;
-        }
-
-        const size_t px = (fx - min_x) / delta_x * dest.cols;
-        const size_t py = (fy - min_y) / delta_y * dest.rows;
-
-        pixels[py][px].sum += fz;
-        ++pixels[py][px].count;
-    }
-
-    for (int y = 0; y < dest.rows; ++y) {
-        for (int x = 0; x < dest.cols; ++x) {
-            const auto avg = pixels[y][x].avg();
-            const uchar norm = (avg - min_z) / delta_z * 255;
-            dest.at<uchar>(y, x) = norm;
         }
     }
 }
@@ -401,7 +342,9 @@ void process_lidar(
 
     printf("Image w=%d, h=%d\n", heightmap_8uc1_img.cols, heightmap_8uc1_img.rows);
 
-    fill_image(bin_filename, heightmap_8uc1_img, min_x, max_x, min_y, max_y, min_z, max_z);
+    fill_image(bin_filename, heightmap_8uc1_img, min_x, max_x, min_y, max_y, min_z, max_z,
+            [](int) -> auto { return true; });
+
     cv::cvtColor(heightmap_8uc1_img, heightmap_show_8uc3_img, cv::COLOR_GRAY2RGB);
 
     make_edges(heightmap_8uc1_img, edgemap_8uc1_img);
@@ -422,12 +365,12 @@ void process_lidar(
             cv::Size { cvRound(delta_x + 0.5f), cvRound(delta_y + 0.5f) },
             CV_8UC1 };
 
-    fill_image_with_ltype(
-            bin_filename, fst_reflect, min_x, max_x, min_y, max_y, min_z, max_z, 0);
-    fill_image_with_ltype(
-            bin_filename, vegetation, min_x, max_x, min_y, max_y, min_z, max_z, 1);
-    fill_image_with_ltype(
-            bin_filename, beneath_veg, min_x, max_x, min_y, max_y, min_z, max_z, 2);
+    fill_image(bin_filename, fst_reflect, min_x, max_x, min_y, max_y, min_z, max_z,
+            [](const int ltype) -> auto { return ltype == 0; });
+    fill_image(bin_filename, vegetation, min_x, max_x, min_y, max_y, min_z, max_z,
+            [](const int ltype) -> auto { return ltype == 1; });
+    fill_image(bin_filename, beneath_veg, min_x, max_x, min_y, max_y, min_z, max_z,
+            [](const int ltype) -> auto { return ltype == 2; });
 
     while (1) {
         cv::imshow(step1_win_name, heightmap_show_8uc3_img);

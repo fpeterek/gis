@@ -6,3 +6,7 @@ compile_commands.json
 lidar
 *.bin
 .cache
+__pycache__
+.py[co]
+venv/
+.venv/

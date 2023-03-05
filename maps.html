@@ -1,0 +1,28 @@
+<!-- <!DOCTYPE html> -->
+<html>
+  <header>
+    <meta charset="utf-8" />
+    <title>Mapy.cz</title>
+    <script type="text/javascript" src="https://api.mapy.cz/loader.js"></script>
+    <script type="text/javascript">Loader.load();</script>
+  </header>
+  <body>
+    <div id="m" style="height:100%"></div>
+
+    <script>
+        var center = SMap.Coords.fromWGS84(18.5234, 49.8525);
+        var m = new SMap(JAK.gel("m"), center, 13);
+        m.addDefaultLayer(SMap.DEF_BASE).enable();
+        m.addDefaultControls();
+
+        var layer = new SMap.Layer.Image();
+        m.addLayer(layer);
+        layer.enable();
+
+        var leftTop = SMap.Coords.fromWGS84(18.519788911122806, 49.855760761802635);
+        var rightBottom = SMap.Coords.fromWGS84(18.526560908463, 49.85034743572127);
+
+        layer.addImage("out.png", leftTop, rightBottom, 0.9);
+    </script>
+  </body>
+</html>
