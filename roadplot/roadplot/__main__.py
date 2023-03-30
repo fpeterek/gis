@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import osmium
 import pygame.display
+import geopy.distance
 
 
 class MapLoaderHandler(osmium.SimpleHandler):
@@ -70,6 +71,20 @@ class Bounds:
     def max(self) -> tuple[float, float]:
         return (self.max_x, self.max_y)
 
+    @property
+    def width(self) -> int:
+        width = distance((self.min_x, self.min_y), (self.max_x, self.min_y))
+        return round(int(width))
+
+    @property
+    def height(self) -> int:
+        width = distance((self.min_x, self.min_y), (self.min_x, self.max_y))
+        return round(int(width))
+
+
+def distance(fst, snd):
+    return geopy.distance.distance(fst[::-1], snd[::-1]).meters
+
 
 def get_bounds(nodes: dict) -> Bounds:
     fst = next(iter(nodes.values()))
@@ -87,32 +102,35 @@ def get_bounds(nodes: dict) -> Bounds:
 
 def plot(handler: MapLoaderHandler):
     bounds = get_bounds(handler.nodes)
-    ratio = (bounds.max_x - bounds.min_x) / (bounds.max_y - bounds.min_y)
+    ratio = bounds.width / bounds.height
     screen_size = (500, int(500*ratio))
     screen = pygame.display.set_mode(screen_size)
     print(screen_size)
 
-    px = (bounds.max_x - bounds.min_x) / (screen_size[0] - 100)
-    py = (bounds.max_y - bounds.min_y) / (screen_size[1] - 100*ratio)
+    px = (screen_size[0]-100) / bounds.width
+    py = (screen_size[1] - 100*ratio) / bounds.height
+
+    meters_per_lat = bounds.width / (bounds.max_x - bounds.min_x)
+    meters_per_lon = bounds.height / (bounds.max_y - bounds.min_y)
 
     screen.fill((255, 255, 255))
     for stop in handler.stops:
         x, y = stop
 
-        x = 50 + (x - bounds.min_x)/px
-        y = screen_size[1] - 50*ratio - (y - bounds.min_y)/py
+        x = 50 + (x - bounds.min_x)*meters_per_lat*px
+        y = screen_size[1] - 50*ratio - (y - bounds.min_y)*meters_per_lon*py
         pygame.draw.circle(screen, (255, 0, 0), (x, y), 5)
 
     for road in handler.roads:
         begin, end = road
 
         bx, by = begin
-        bx = 50 + (bx - bounds.min_x)/px
-        by = screen_size[1] - 50*ratio - (by - bounds.min_y)/py
+        bx = 50 + (bx - bounds.min_x)*meters_per_lat*px
+        by = screen_size[1] - 50*ratio - (by - bounds.min_y)*meters_per_lon*py
 
         ex, ey = end
-        ex = 50 + (ex - bounds.min_x)/px
-        ey = screen_size[1] - 50*ratio - (ey - bounds.min_y)/py
+        ex = 50 + (ex - bounds.min_x)*meters_per_lat*px
+        ey = screen_size[1] - 50*ratio - (ey - bounds.min_y)*meters_per_lon*py
 
         pygame.draw.line(screen, (0, 255, 0), (bx, by), (ex, ey), 3)
 
